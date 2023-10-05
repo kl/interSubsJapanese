@@ -1,3 +1,11 @@
+about this fork
+==============
+
+Uses sudachi.rs as a tokenizer (https://github.com/WorksApplications/sudachi.rs) to support looking up
+words in Japanese subtitles.
+
+To use this fork first install sudachi.rs and make sure the sudachi binary is in your PATH.
+
 interSubs
 =========
 
