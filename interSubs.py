@@ -1381,6 +1381,18 @@ class drawing_layer(QLabel):
 				self.fontMetrics().height()
 				)
 
+
+def tokenize_first_word_japanese(substr):
+	cmd = ['sudachi']
+	ret = subprocess.run(cmd, stdout=subprocess.PIPE, input=substr.encode('utf-8')).stdout.decode('utf-8')
+
+	if len(ret) > 0:
+		first_line_columns = ret.split('\n')[0].split()
+		return first_line_columns[0], first_line_columns[-1]
+	else:
+		return None
+
+
 class events_class(QLabel):
 	mouseHover = pyqtSignal(str, int, bool)
 	redraw = pyqtSignal(bool, bool)
@@ -1392,10 +1404,11 @@ class events_class(QLabel):
 		self.subs = subs
 		self.skip = skip
 		self.highlight = False
+		self.highlightSubstring = None
 
 		self.setStyleSheet('background: transparent; color: transparent;')
 
-	def highligting(self, color, underline_width):
+	def highlighting(self, color, underline_width, substring=None):
 		color = QColor(color)
 		color = QColor(color.red(), color.green(), color.blue(), 200)
 		painter = QPainter(self)
@@ -1409,7 +1422,11 @@ class events_class(QLabel):
 			pen = QPen(brush, underline_width, Qt.SolidLine, Qt.RoundCap)
 			painter.setPen(pen)
 			if not self.skip:
-				painter.drawLine(0, text_height - underline_width, text_width, text_height - underline_width)
+				if substring is not None:
+					x, width = self.x_and_width_for_substring(substring)
+					painter.drawLine(x, text_height - underline_width, x + width, text_height - underline_width)
+				else:
+					painter.drawLine(0, text_height - underline_width, text_width, text_height - underline_width)
 
 		if config.hover_hightlight:
 			x = y = 0
@@ -1421,7 +1438,7 @@ class events_class(QLabel):
 	if config.outline_B:
 		def paintEvent(self, evt: QPaintEvent):
 			if self.highlight:
-				self.highligting(config.hover_color, config.hover_underline_thickness)
+				self.highlighting(config.hover_color, config.hover_underline_thickness, self.highlightSubstring)
 
 	#####################################################
 
@@ -1431,16 +1448,51 @@ class events_class(QLabel):
 
 		self.setFixedSize(text_width, text_height + config.outline_bottom_padding + config.outline_top_padding)
 
+	def x_and_width_for_substring(self, substring):
+		metrics = self.fontMetrics()
+		start_idx = self.word.index(substring)
+		x = 0
+		width = 0
+
+		for i in range(start_idx):
+			char = self.word[i]
+			x += metrics.widthChar(char)
+
+		for i in range(start_idx, start_idx + len(substring)):
+			char = self.word[i]
+			width += metrics.widthChar(char)
+
+		return x, width
+
+	def index_of_char_at_mouse_pointer(self, event):
+		metrics = self.fontMetrics()
+		target_x = event.x()
+		index = 0
+		x = 0
+		for char in self.word:
+			x += metrics.widthChar(char)
+			if x >= target_x:
+				return index
+			index += 1
+		return None
+
 	def enterEvent(self, event):
 		if not self.skip:
-			self.highlight = True
-			self.repaint()
-			config.queue_to_translate.put((self.word, event.globalX()))
+			idx = self.index_of_char_at_mouse_pointer(event)
+			if idx is not None:
+				start = self.word[idx:]
+				jword_text, jword_deinflect = tokenize_first_word_japanese(start)
+				self.highlight = True
+				self.highlightSubstring = jword_text
+				self.repaint()
+				if jword_deinflect is not None:
+					config.queue_to_translate.put((jword_deinflect, event.globalX()))
 
 	@pyqtSlot()
 	def leaveEvent(self, event):
 		if not self.skip:
 			self.highlight = False
+			self.highlightSubstring = None
 			self.repaint()
 
 			config.scroll = {}
